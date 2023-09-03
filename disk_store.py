@@ -116,6 +116,8 @@ class DiskStorage:
         return value.decode("utf-8")
 
     def close(self) -> None:
+        self.file_handle.flush()
+        os.fsync(self.file_handle.fileno())
         self.file_handle.close()
 
     def __setitem__(self, key: str, value: str) -> None:
