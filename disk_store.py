@@ -89,7 +89,6 @@ class DiskStorage:
     def set(self, key: str, value: str) -> None:
         current_timestamp = int(time.time())
         [_, kv_data] = encode_kv(timestamp=current_timestamp, key=key, value=value)
-        self.file_handle.seek(0, os.SEEK_END)
         self.file_handle.write(kv_data)
         self.file_handle.flush()
         os.fsync(self.file_handle.fileno())
