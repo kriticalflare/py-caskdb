@@ -22,6 +22,7 @@ Typical usage example:
 import os.path
 import time
 import typing
+import struct
 
 from format import encode_kv, decode_kv, decode_header
 
@@ -64,16 +65,59 @@ class DiskStorage:
     """
 
     def __init__(self, file_name: str = "data.db"):
-        raise NotImplementedError
+        self.file_id = file_name
+        self.file_handle = open(file_name, "ab+")
+        self.keydir = {}
+        self.offset = 0
+        while self.offset < os.path.getsize(file_name):
+            self.file_handle.seek(self.offset)
+            header_bytes = self.file_handle.read(12)
+            [timestamp, key_size, value_size] = decode_header(header_bytes)
+            self.file_handle.seek(self.offset)
+            kv_bytes = self.file_handle.read(12 + key_size + value_size)
+            [_, key, value] = decode_kv(kv_bytes)
+            key_size = len(key)
+            value_size = len(value)
+            self.offset = self.offset + 12 + key_size + value_size
+            self.keydir[key] = {
+                "file_id": file_name,
+                "value_sz": value_size,
+                "value_pos": self.offset - value_size,
+                "tstamp": timestamp,
+            }
 
     def set(self, key: str, value: str) -> None:
-        raise NotImplementedError
+        current_timestamp = int(time.time())
+        [_, kv_data] = encode_kv(timestamp=current_timestamp, key=key, value=value)
+        self.file_handle.seek(0, os.SEEK_END)
+        self.file_handle.write(kv_data)
+        self.file_handle.flush()
+        os.fsync(self.file_handle.fileno())
+
+        if key not in self.keydir:
+            self.keydir[key] = {}
+        self.keydir[key]["file_id"] = self.file_id
+        self.keydir[key]["tstamp"] = current_timestamp
+        self.keydir[key]["value_sz"] = len(value)
+        self.keydir[key]["value_pos"] = self.file_handle.tell() - len(value)
 
     def get(self, key: str) -> str:
-        raise NotImplementedError
+        value = ""
+        if key not in self.keydir:
+            return value
+
+        metadata = self.keydir[key]
+        file_path = metadata["file_id"]
+        with open(file_path, "rb") as f:
+            value_sz = metadata["value_sz"]
+            value_pos = metadata["value_pos"]
+            f.seek(value_pos)
+            value_bytes = f.read(value_sz)
+            [value] = struct.unpack(f"{value_sz}s", value_bytes)
+        return value.decode("utf-8")
 
     def close(self) -> None:
-        raise NotImplementedError
+        self.file_handle.close()
 
     def __setitem__(self, key: str, value: str) -> None:
         return self.set(key, value)
